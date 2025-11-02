@@ -1,28 +1,31 @@
-# Gunakan image dasar PHP versi 8.2
-FROM php:8.2-fpm
+--- TAHAP 1: Build Dependencies (Composer) ---
+FROM composer:2.5 AS vendor
 
-# Install dependencies sistem
-RUN apt-get update && apt-get install -y \
-    git curl zip unzip libpng-dev libonig-dev libxml2-dev libzip-dev \
-    && docker-php-ext-install pdo_mysql mbstring exif pcntl bcmath gd zip
+WORKDIR /app
 
-# Install Composer
-COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
-
-# Set working directory di dalam container
-WORKDIR /var/www
-
-# Copy semua file project Laravel ke container
 COPY . .
 
-# Install dependency Laravel
-RUN composer install
+Install dependensi production
+RUN composer install --no-interaction --no-dev --optimize-autoloader
 
-# Set permission folder storage dan bootstrap/cache
-RUN chmod -R 775 storage bootstrap/cache
+--- TAHAP 2: Final Image (PHP-FPM) ---
+Mulai dari image PHP-FPM yang ringan
+FROM php:8.2-fpm-alpine
 
-# Jalankan server Laravel default
-CMD php artisan serve --host=0.0.0.0 --port=8000
+WORKDIR /var/www/html
 
-# Expose port 8000 agar bisa diakses dari luar
-EXPOSE 8000
+Install ekstensi PHP yang umum dibutuhkan Laravel
+RUN docker-php-ext-install pdo pdo_mysql bcmath
+
+Salin file dependensi (vendor) dari tahap "vendor"
+COPY --from=vendor /app/vendor/ ./vendor/
+
+Ini memastikan kita mendapatkan file yang "bersih" dari build stage
+COPY --from=vendor /app/ .
+
+Setel kepemilikan file agar web server bisa menulis ke storage
+RUN chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache
+
+Expose port yang digunakan oleh PHP-FPM
+EXPOSE 9000
+CMD ["php-fpm"]
